@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
-<head> 
+<head>
     <link rel="icon" type="image/png" href="image-Photoroom (2).png">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -418,39 +418,42 @@
                                   timeToMinutes(tdIda.substring(0,5));
                 const tdTotal = minutesToHHMMSS(totalMins);
 
+                // Color condition for TD Total: Green if <= 8 mins, Red if > 8 mins
+                const tdTotalColorClass = totalMins <= 8 ? '!text-emerald-400' : '!text-red-500';
+
                 const tr = document.createElement('tr');
                 tr.className = "hover:bg-zinc-800/50 transition-colors";
                 tr.setAttribute('data-row-id', row.id);
                 tr.innerHTML = `
                     <td class="p-2 text-center font-bold text-zinc-400 border-r border-zinc-800">${index + 1}</td>
                     <td class="p-2 border-r border-zinc-800 text-center">
-                        <input type="date" value="${row.fecha}" onchange="updateRowData(${row.id}, 'fecha', this.value)" class="bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-xs text-zinc-200 focus:outline-none focus:border-amber-500">
+                        <input type="date" value="${row.fecha}" onblur="updateRowData(${row.id}, 'fecha', this.value)" class="bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-xs text-zinc-200 focus:outline-none focus:border-amber-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800">
-                        <input type="text" value="${row.cliente}" onchange="updateRowData(${row.id}, 'cliente', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-amber-500">
+                        <input type="text" value="${row.cliente}" onblur="updateRowData(${row.id}, 'cliente', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-amber-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-confirm">
-                        <input type="time" value="${row.confirmacion}" onchange="updateRowDataSilent(${row.id}, 'confirmacion', this.value)" onblur="renderTable()" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-lime-500">
+                        <input type="time" value="${row.confirmacion}" onblur="updateRowData(${row.id}, 'confirmacion', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-lime-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-guia">
-                        <input type="time" value="${row.guiaEnviada}" onchange="updateRowDataSilent(${row.id}, 'guiaEnviada', this.value)" onblur="renderTable()" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-yellow-500">
+                        <input type="time" value="${row.guiaEnviada}" onblur="updateRowData(${row.id}, 'guiaEnviada', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-yellow-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-calc text-center">${tdOficina}</td>
                     <td class="p-2 border-r border-zinc-800 col-sucursal">
-                        <input type="time" value="${row.salidaSucursal}" onchange="updateRowDataSilent(${row.id}, 'salidaSucursal', this.value)" onblur="renderTable()" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-zinc-500">
+                        <input type="time" value="${row.salidaSucursal}" onblur="updateRowData(${row.id}, 'salidaSucursal', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-zinc-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-calc text-center">${tdCampo}</td>
                     <td class="p-2 border-r border-zinc-800 col-despacho">
-                        <input type="time" value="${row.fotoDespacho}" onchange="updateRowDataSilent(${row.id}, 'fotoDespacho', this.value)" onblur="renderTable()" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-red-500">
+                        <input type="time" value="${row.fotoDespacho}" onblur="updateRowData(${row.id}, 'fotoDespacho', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-red-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-calc text-center">${tdIda}</td>
                     <td class="p-2 border-r border-zinc-800 col-sucursal">
-                        <input type="time" value="${row.regreso}" onchange="updateRowDataSilent(${row.id}, 'regreso', this.value)" onblur="renderTable()" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-zinc-500">
+                        <input type="time" value="${row.regreso}" onblur="updateRowData(${row.id}, 'regreso', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-zinc-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-calc text-center">${tdRetorno}</td>
-                    <td class="p-2 border-r border-zinc-800 col-calc text-center !text-emerald-400 font-extrabold">${tdTotal}</td>
+                    <td class="p-2 border-r border-zinc-800 col-calc text-center ${tdTotalColorClass} font-extrabold">${tdTotal}</td>
                     <td class="p-2 border-r border-zinc-800 col-despacho">
-                        <input type="text" value="${row.auxiliar}" onchange="updateRowData(${row.id}, 'auxiliar', this.value)" placeholder="Auxiliar..." class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-red-500">
+                        <input type="text" value="${row.auxiliar}" onblur="updateRowData(${row.id}, 'auxiliar', this.value)" placeholder="Auxiliar..." class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-red-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 text-center relative group" 
                         tabindex="0"
@@ -648,16 +651,6 @@
             if (row) {
                 row[field] = value;
                 renderTable();
-            }
-        }
-
-        /* Update state without re-rendering instantly to prevent input field re-creation while typing */
-        function updateRowDataSilent(id, field, value) {
-            const row = rowsData.find(r => r.id === id);
-            if (row) {
-                row[field] = value;
-                updateMetrics();
-                updateChart();
             }
         }
 
