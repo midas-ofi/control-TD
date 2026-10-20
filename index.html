@@ -358,8 +358,33 @@
 
         let chartInstance = null;
 
+        const STORAGE_KEY = 'MIDAS_TD_DATA_STORE';
+
+        function guardarEnLocalStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(rowsData));
+            } catch (e) {
+                console.error("Error al guardar en LocalStorage:", e);
+            }
+        }
+
+        function cargarDeLocalStorage() {
+            try {
+                const dataGuardada = localStorage.getItem(STORAGE_KEY);
+                if (dataGuardada) {
+                    rowsData = JSON.parse(dataGuardada);
+                } else {
+                    rowsData = [];
+                }
+            } catch (e) {
+                console.error("Error al cargar de LocalStorage:", e);
+                rowsData = [];
+            }
+        }
+
         // Initialize App on Load
         window.onload = function() {
+            cargarDeLocalStorage();
             lucide.createIcons();
             updateDateDisplay(todayStr);
             renderCalendar();
@@ -624,6 +649,7 @@
                 auxiliar: "",
                 guiaImg: ""
             });
+            guardarEnLocalStorage();
             renderTable();
         }
 
@@ -641,6 +667,7 @@
             if (rowToDeleteId !== null) {
                 rowsData = rowsData.filter(r => r.id !== rowToDeleteId);
                 rowToDeleteId = null;
+                guardarEnLocalStorage();
                 renderTable();
             }
             cerrarModalEliminar();
@@ -650,6 +677,7 @@
             const row = rowsData.find(r => r.id === id);
             if (row) {
                 row[field] = value;
+                guardarEnLocalStorage();
                 renderTable();
             }
         }
