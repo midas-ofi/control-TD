@@ -338,9 +338,6 @@
         // Get today's date in YYYY-MM-DD
         const todayStr = new Date().toISOString().split('T')[0];
 
-        // URL de tu Google Sheet publicado en CSV
-        const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5skm2xd4qBmnp6LFiBL4pt_zusgjszZYoB5xfJfouPL29P4C4g1RP4kKUag-cDyKui5jKf_X_eT7L/pub?gid=0&single=true&output=csv';
-
         // Helper to format YYYY-MM-DD into DD/MM/YYYY
         function formatToDDMMYYYY(dateStr) {
             if (!dateStr) return '';
@@ -371,70 +368,29 @@
             }
         }
 
-        async function cargarDeLocalStorage() {
+        function cargarDeLocalStorage() {
             try {
-                const response = await fetch(SHEET_CSV_URL);
-                if (!response.ok) throw new Error('No se pudo conectar a Google Sheets');
-                
-                const csvText = await response.text();
-                const lineas = csvText.split('\n');
-                
-                rowsData = [];
-                for (let i = 1; i < lineas.length; i++) {
-                    const linea = lineas[i].trim();
-                    if (!linea) continue;
-                    
-                    const cols = linea.split(',');
-                    const cliente = cols[0] ? cols[0].replace(/^"|"$/g, '') : '';
-                    const confirmacion = cols[1] ? cols[1].replace(/^"|"$/g, '') : '';
-                    const guiaEnviada = cols[2] ? cols[2].replace(/^"|"$/g, '') : '';
-                    const salidaSucursal = cols[3] ? cols[3].replace(/^"|"$/g, '') : '';
-                    const fotoDespacho = cols[4] ? cols[4].replace(/^"|"$/g, '') : '';
-                    const regreso = cols[5] ? cols[5].replace(/^"|"$/g, '') : '';
-                    const auxiliar = cols[6] ? cols[6].replace(/^"|"$/g, '') : '';
-                    const guia = cols[7] ? cols[7].replace(/^"|"$/g, '') : '';
-
-                    if (cliente) {
-                        rowsData.push({
-                            id: i,
-                            fecha: todayStr,
-                            cliente: cliente,
-                            confirmacion: confirmacion || "",
-                            guiaEnviada: guiaEnviada || "",
-                            salidaSucursal: salidaSucursal || "",
-                            fotoDespacho: fotoDespacho || "",
-                            regreso: regreso || "",
-                            auxiliar: auxiliar || "",
-                            guiaImg: ""
-                        });
-                    }
-                }
-            } catch (e) {
-                console.log("Usando respaldo local por error de red:", e);
                 const dataGuardada = localStorage.getItem(STORAGE_KEY);
                 if (dataGuardada) {
                     rowsData = JSON.parse(dataGuardada);
                 } else {
                     rowsData = [];
                 }
+            } catch (e) {
+                console.error("Error al cargar de LocalStorage:", e);
+                rowsData = [];
             }
         }
 
         // Initialize App on Load
-        window.onload = async function() {
-            await cargarDeLocalStorage();
+        window.onload = function() {
+            cargarDeLocalStorage();
             lucide.createIcons();
             updateDateDisplay(todayStr);
             renderCalendar();
             renderTable();
             initChart();
             updateMetrics();
-
-            // Sincronizar automáticamente con Google Sheets cada 10 segundos
-            setInterval(async () => {
-                await cargarDeLocalStorage();
-                renderTable();
-            }, 10000);
 
             // Close date picker popup when clicking outside
             document.addEventListener('click', function(e) {
