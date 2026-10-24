@@ -186,10 +186,10 @@
             </div>
 
             <div class="flex items-center gap-3">
-                <span class="text-xs text-zinc-400 font-medium">Estado de la Base de Datos:</span>
-                <span id="syncBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                    <span id="syncDot" class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                    <span id="syncStatusText">Sincronizado al recargar</span>
+                <span class="text-xs text-zinc-400 font-medium">Auto-Guardado:</span>
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Activo
                 </span>
             </div>
         </div>
@@ -282,7 +282,7 @@
             
             <div class="space-y-1">
                 <h3 class="text-lg font-bold text-zinc-100">¿Confirmar eliminación?</h3>
-                <p class="text-xs text-zinc-400">Esta acción eliminará el registro de la lista de despacho para todos los usuarios. Esta operación no se puede deshacer.</p>
+                <p class="text-xs text-zinc-400">Esta acción eliminará el registro de la lista de despacho. Esta operación no se puede deshacer.</p>
             </div>
 
             <div class="flex items-center justify-center gap-3 pt-2">
@@ -334,98 +334,6 @@
         </div>
     </div>
 
-    <!-- FIREBASE REALTIME CLOUD SYNCHRONIZATION -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Global App & Config variables
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'midas-td-system';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' 
-            ? JSON.parse(__firebase_config) 
-            : {
-                apiKey: "demo-key",
-                authDomain: "demo-app.firebaseapp.com",
-                projectId: "demo-app",
-                storageBucket: "demo-app.appspot.com",
-                messagingSenderId: "123456789",
-                appId: "1:123456789:web:abcdef"
-            };
-
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-
-        let isUserAuthenticated = false;
-
-        // Path following Rule 1: /artifacts/{appId}/public/data/items/midas_store (6 path segments = valid doc)
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'items', 'midas_store');
-
-        // Authenticate & load data once on startup (no live listener)
-        async function startFirebaseSync() {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (err) {
-                console.warn("Auth initialization fallback:", err);
-            }
-
-            onAuthStateChanged(auth, async (user) => {
-                if (!user) return;
-                isUserAuthenticated = true;
-
-                try {
-                    // Fetch cloud data ONCE when loading/refreshing the page
-                    const docSnap = await getDoc(docRef);
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        if (data && Array.isArray(data.rowsData)) {
-                            window.rowsData = data.rowsData;
-                            if (typeof window.renderTable === 'function') {
-                                window.renderTable();
-                            }
-                        }
-                    } else {
-                        // First run initialization with default data
-                        window.syncToCloud(window.rowsData || []);
-                    }
-                    
-                    const badgeText = document.getElementById('syncStatusText');
-                    if (badgeText) badgeText.innerText = "Sincronizado al recargar";
-                } catch (error) {
-                    console.error("Error al cargar datos iniciales:", error);
-                    const badgeText = document.getElementById('syncStatusText');
-                    if (badgeText) badgeText.innerText = "Error de carga";
-                }
-            });
-        }
-
-        // Global cloud saving function called whenever data changes locally
-        window.syncToCloud = async function(data) {
-            if (!isUserAuthenticated && !auth.currentUser) return;
-            try {
-                const badgeText = document.getElementById('syncStatusText');
-                if (badgeText) badgeText.innerText = "Guardando cambios...";
-                
-                await setDoc(docRef, {
-                    rowsData: data || [],
-                    lastUpdated: new Date().toISOString()
-                }, { merge: true });
-
-                if (badgeText) badgeText.innerText = "Guardado en nube";
-            } catch (error) {
-                console.error("Error al guardar en la nube:", error);
-            }
-        };
-
-        // Initialize Firebase Sync
-        startFirebaseSync();
-    </script>
-
     <script>
         // Get today's date in YYYY-MM-DD
         const todayStr = new Date().toISOString().split('T')[0];
@@ -444,21 +352,39 @@
         let currentCalDate = new Date();
         let selectedDateFilter = todayStr;
 
-        // Global Data Store (Synchronized in real-time with Cloud)
-        window.rowsData = window.rowsData || [];
+        // Data Store
+        let rowsData = [];
         let rowToDeleteId = null;
 
         let chartInstance = null;
 
-        // Trigger sync to cloud
+        const STORAGE_KEY = 'MIDAS_TD_DATA_STORE';
+
         function guardarEnLocalStorage() {
-            if (typeof window.syncToCloud === 'function') {
-                window.syncToCloud(window.rowsData);
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(rowsData));
+            } catch (e) {
+                console.error("Error al guardar en LocalStorage:", e);
+            }
+        }
+
+        function cargarDeLocalStorage() {
+            try {
+                const dataGuardada = localStorage.getItem(STORAGE_KEY);
+                if (dataGuardada) {
+                    rowsData = JSON.parse(dataGuardada);
+                } else {
+                    rowsData = [];
+                }
+            } catch (e) {
+                console.error("Error al cargar de LocalStorage:", e);
+                rowsData = [];
             }
         }
 
         // Initialize App on Load
         window.onload = function() {
+            cargarDeLocalStorage();
             lucide.createIcons();
             updateDateDisplay(todayStr);
             renderCalendar();
@@ -500,7 +426,6 @@
 
         function renderTable() {
             const tbody = document.getElementById('cuerpoTabla');
-            if (!tbody) return;
             tbody.innerHTML = '';
 
             const activeRows = getFilteredRowsData();
@@ -527,33 +452,33 @@
                 tr.innerHTML = `
                     <td class="p-2 text-center font-bold text-zinc-400 border-r border-zinc-800">${index + 1}</td>
                     <td class="p-2 border-r border-zinc-800 text-center">
-                        <input type="date" value="${row.fecha || ''}" onchange="updateRowData(${row.id}, 'fecha', this.value)" class="bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-xs text-zinc-200 focus:outline-none focus:border-amber-500">
+                        <input type="date" value="${row.fecha}" onblur="updateRowData(${row.id}, 'fecha', this.value)" class="bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-xs text-zinc-200 focus:outline-none focus:border-amber-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800">
-                        <input type="text" value="${row.cliente || ''}" onblur="updateRowData(${row.id}, 'cliente', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-amber-500">
+                        <input type="text" value="${row.cliente}" onblur="updateRowData(${row.id}, 'cliente', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-amber-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-confirm">
-                        <input type="time" value="${row.confirmacion || ''}" onchange="updateRowData(${row.id}, 'confirmacion', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-lime-500">
+                        <input type="time" value="${row.confirmacion}" onblur="updateRowData(${row.id}, 'confirmacion', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-lime-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-guia">
-                        <input type="time" value="${row.guiaEnviada || ''}" onchange="updateRowData(${row.id}, 'guiaEnviada', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-yellow-500">
+                        <input type="time" value="${row.guiaEnviada}" onblur="updateRowData(${row.id}, 'guiaEnviada', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-yellow-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-calc text-center">${tdOficina}</td>
                     <td class="p-2 border-r border-zinc-800 col-sucursal">
-                        <input type="time" value="${row.salidaSucursal || ''}" onchange="updateRowData(${row.id}, 'salidaSucursal', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-zinc-500">
+                        <input type="time" value="${row.salidaSucursal}" onblur="updateRowData(${row.id}, 'salidaSucursal', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-zinc-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-calc text-center">${tdCampo}</td>
                     <td class="p-2 border-r border-zinc-800 col-despacho">
-                        <input type="time" value="${row.fotoDespacho || ''}" onchange="updateRowData(${row.id}, 'fotoDespacho', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-red-500">
+                        <input type="time" value="${row.fotoDespacho}" onblur="updateRowData(${row.id}, 'fotoDespacho', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-red-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-calc text-center">${tdIda}</td>
                     <td class="p-2 border-r border-zinc-800 col-sucursal">
-                        <input type="time" value="${row.regreso || ''}" onchange="updateRowData(${row.id}, 'regreso', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-zinc-500">
+                        <input type="time" value="${row.regreso}" onblur="updateRowData(${row.id}, 'regreso', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-zinc-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-calc text-center">${tdRetorno}</td>
                     <td class="p-2 border-r border-zinc-800 col-calc text-center ${tdTotalColorClass} font-extrabold">${tdTotal}</td>
                     <td class="p-2 border-r border-zinc-800 col-despacho">
-                        <input type="text" value="${row.auxiliar || ''}" onblur="updateRowData(${row.id}, 'auxiliar', this.value)" placeholder="Auxiliar..." class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-red-500">
+                        <input type="text" value="${row.auxiliar}" onblur="updateRowData(${row.id}, 'auxiliar', this.value)" placeholder="Auxiliar..." class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-red-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 text-center relative group" 
                         tabindex="0"
@@ -595,8 +520,8 @@
         }
 
         function getFilteredRowsData() {
-            if (!selectedDateFilter) return window.rowsData;
-            return window.rowsData.filter(r => r.fecha === selectedDateFilter);
+            if (!selectedDateFilter) return rowsData;
+            return rowsData.filter(r => r.fecha === selectedDateFilter);
         }
 
         /* --- VISUAL CALENDAR FUNCTIONS --- */
@@ -710,9 +635,9 @@
 
         // Row Manipulation
         function agregarFila() {
-            const newId = window.rowsData.length ? Math.max(...window.rowsData.map(r => r.id)) + 1 : 1;
+            const newId = rowsData.length ? Math.max(...rowsData.map(r => r.id)) + 1 : 1;
             const filterDate = selectedDateFilter || todayStr;
-            window.rowsData.push({
+            rowsData.push({
                 id: newId,
                 fecha: filterDate,
                 cliente: "",
@@ -740,7 +665,7 @@
 
         function confirmarEliminarFila() {
             if (rowToDeleteId !== null) {
-                window.rowsData = window.rowsData.filter(r => r.id !== rowToDeleteId);
+                rowsData = rowsData.filter(r => r.id !== rowToDeleteId);
                 rowToDeleteId = null;
                 guardarEnLocalStorage();
                 renderTable();
@@ -749,13 +674,11 @@
         }
 
         function updateRowData(id, field, value) {
-            const row = window.rowsData.find(r => r.id === id);
+            const row = rowsData.find(r => r.id === id);
             if (row) {
-                if (row[field] !== value) {
-                    row[field] = value;
-                    guardarEnLocalStorage();
-                    renderTable();
-                }
+                row[field] = value;
+                guardarEnLocalStorage();
+                renderTable();
             }
         }
 
@@ -909,7 +832,7 @@
             const rows = document.querySelectorAll('#cuerpoTabla tr');
             rows.forEach(row => {
                 const rowId = parseInt(row.getAttribute('data-row-id'));
-                const rData = window.rowsData.find(r => r.id === rowId);
+                const rData = rowsData.find(r => r.id === rowId);
 
                 let matchesText = true;
                 let matchesDate = true;
@@ -964,7 +887,7 @@
                 return;
             }
 
-            const row = window.rowsData.find(r => r.id === rowId);
+            const row = rowsData.find(r => r.id === rowId);
             if (row) {
                 // Time extractor regex (HH:MM)
                 const timeMatch = msg.match(/\b([01]?[0-9]|2[0-3]):[0-5][0-9]\b/);
@@ -983,7 +906,6 @@
                     row.regreso = timeFound;
                 }
 
-                guardarEnLocalStorage();
                 renderTable();
                 toggleAIModal();
                 document.getElementById('aiMessageInput').value = '';
