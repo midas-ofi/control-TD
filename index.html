@@ -186,10 +186,10 @@
             </div>
 
             <div class="flex items-center gap-3">
-                <span class="text-xs text-zinc-400 font-medium">Sincronización Firestore:</span>
-                <span id="syncBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    En línea
+                <span class="text-xs text-zinc-400 font-medium">Estado de la Base de Datos:</span>
+                <span id="syncBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <span id="syncDot" class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                    <span id="syncStatusText">Sincronizado al recargar</span>
                 </span>
             </div>
         </div>
@@ -282,7 +282,7 @@
             
             <div class="space-y-1">
                 <h3 class="text-lg font-bold text-zinc-100">¿Confirmar eliminación?</h3>
-                <p class="text-xs text-zinc-400">Esta acción eliminará el registro de la lista de despacho. Esta operación no se puede deshacer.</p>
+                <p class="text-xs text-zinc-400">Esta acción eliminará el registro de la lista de despacho para todos los usuarios. Esta operación no se puede deshacer.</p>
             </div>
 
             <div class="flex items-center justify-center gap-3 pt-2">
@@ -334,15 +334,16 @@
         </div>
     </div>
 
-    <!-- FIREBASE MODULE & REAL-TIME LOGIC -->
+    <!-- FIREBASE REALTIME CLOUD SYNCHRONIZATION -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase Configuration setup using environment variables with fallback
-        const firebaseConfig = typeof __firebase_config !== 'undefined'
-            ? JSON.parse(__firebase_config)
+        // Global App & Config variables
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'midas-td-system';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
             : {
                 apiKey: "demo-key",
                 authDomain: "demo-app.firebaseapp.com",
@@ -352,21 +353,17 @@
                 appId: "1:123456789:web:abcdef"
             };
 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'midas-td-system';
-
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        let currentUser = null;
-        let isLocalUpdate = false;
+        let isUserAuthenticated = false;
 
-        // Corrected Firestore path with 6 segments (even number required by Firestore)
-        // Collection: artifacts, Doc: appId, Collection: public, Doc: data, Collection: items, Doc: midas_store
+        // Path following Rule 1: /artifacts/{appId}/public/data/items/midas_store (6 path segments = valid doc)
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'items', 'midas_store');
 
-        // Authenticate & listen to Firestore updates
-        async function initFirebaseSync() {
+        // Authenticate & load data once on startup (no live listener)
+        async function startFirebaseSync() {
             try {
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
@@ -377,51 +374,56 @@
                 console.warn("Auth initialization fallback:", err);
             }
 
-            onAuthStateChanged(auth, (user) => {
+            onAuthStateChanged(auth, async (user) => {
                 if (!user) return;
-                currentUser = user;
+                isUserAuthenticated = true;
 
-                // Subscribe to real-time changes
-                onSnapshot(docRef, (snapshot) => {
-                    if (snapshot.exists()) {
-                        const data = snapshot.data();
+                try {
+                    // Fetch cloud data ONCE when loading/refreshing the page
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
                         if (data && Array.isArray(data.rowsData)) {
-                            // Sync state from server across all devices
                             window.rowsData = data.rowsData;
                             if (typeof window.renderTable === 'function') {
                                 window.renderTable();
                             }
                         }
                     } else {
-                        // First run initialization with current or sample data
-                        syncToFirestore(window.rowsData || []);
+                        // First run initialization with default data
+                        window.syncToCloud(window.rowsData || []);
                     }
-                }, (error) => {
-                    console.error("Error listening to Firestore updates:", error);
-                });
+                    
+                    const badgeText = document.getElementById('syncStatusText');
+                    if (badgeText) badgeText.innerText = "Sincronizado al recargar";
+                } catch (error) {
+                    console.error("Error al cargar datos iniciales:", error);
+                    const badgeText = document.getElementById('syncStatusText');
+                    if (badgeText) badgeText.innerText = "Error de carga";
+                }
             });
         }
 
-        // Save current table state to Firestore
-        async function syncToFirestore(data) {
-            if (!currentUser) return;
+        // Global cloud saving function called whenever data changes locally
+        window.syncToCloud = async function(data) {
+            if (!isUserAuthenticated && !auth.currentUser) return;
             try {
+                const badgeText = document.getElementById('syncStatusText');
+                if (badgeText) badgeText.innerText = "Guardando cambios...";
+                
                 await setDoc(docRef, {
-                    rowsData: data,
-                    updatedAt: new Date().toISOString()
+                    rowsData: data || [],
+                    lastUpdated: new Date().toISOString()
                 }, { merge: true });
-            } catch (error) {
-                console.error("Error syncing to Firestore:", error);
-            }
-        }
 
-        // Export save function to global scope to replace LocalStorage calls
-        window.guardarEnFirestore = function() {
-            syncToFirestore(window.rowsData || []);
+                if (badgeText) badgeText.innerText = "Guardado en nube";
+            } catch (error) {
+                console.error("Error al guardar en la nube:", error);
+            }
         };
 
-        // Initialize Firebase on start
-        initFirebaseSync();
+        // Initialize Firebase Sync
+        startFirebaseSync();
     </script>
 
     <script>
@@ -442,27 +444,21 @@
         let currentCalDate = new Date();
         let selectedDateFilter = todayStr;
 
-        // Global Data Store (Synchronized with Firestore)
-        window.rowsData = [];
+        // Global Data Store (Synchronized in real-time with Cloud)
+        window.rowsData = window.rowsData || [];
         let rowToDeleteId = null;
 
         let chartInstance = null;
 
+        // Trigger sync to cloud
         function guardarEnLocalStorage() {
-            // Updated to synchronize with Firestore across all devices
-            if (typeof window.guardarEnFirestore === 'function') {
-                window.guardarEnFirestore();
+            if (typeof window.syncToCloud === 'function') {
+                window.syncToCloud(window.rowsData);
             }
-        }
-
-        function cargarDeLocalStorage() {
-            // Initial placeholder data while Firestore loads
-            window.rowsData = window.rowsData || [];
         }
 
         // Initialize App on Load
         window.onload = function() {
-            cargarDeLocalStorage();
             lucide.createIcons();
             updateDateDisplay(todayStr);
             renderCalendar();
