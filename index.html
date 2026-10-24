@@ -186,10 +186,10 @@
             </div>
 
             <div class="flex items-center gap-3">
-                <span class="text-xs text-zinc-400 font-medium">Auto-Guardado:</span>
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span class="text-xs text-zinc-400 font-medium">Sincronización Firestore:</span>
+                <span id="syncBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    Activo
+                    En línea
                 </span>
             </div>
         </div>
@@ -334,6 +334,96 @@
         </div>
     </div>
 
+    <!-- FIREBASE MODULE & REAL-TIME LOGIC -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase Configuration setup using environment variables with fallback
+        const firebaseConfig = typeof __firebase_config !== 'undefined'
+            ? JSON.parse(__firebase_config)
+            : {
+                apiKey: "demo-key",
+                authDomain: "demo-app.firebaseapp.com",
+                projectId: "demo-app",
+                storageBucket: "demo-app.appspot.com",
+                messagingSenderId: "123456789",
+                appId: "1:123456789:web:abcdef"
+            };
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'midas-td-system';
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let currentUser = null;
+        let isLocalUpdate = false;
+
+        // Corrected Firestore path with 6 segments (even number required by Firestore)
+        // Collection: artifacts, Doc: appId, Collection: public, Doc: data, Collection: items, Doc: midas_store
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'items', 'midas_store');
+
+        // Authenticate & listen to Firestore updates
+        async function initFirebaseSync() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (err) {
+                console.warn("Auth initialization fallback:", err);
+            }
+
+            onAuthStateChanged(auth, (user) => {
+                if (!user) return;
+                currentUser = user;
+
+                // Subscribe to real-time changes
+                onSnapshot(docRef, (snapshot) => {
+                    if (snapshot.exists()) {
+                        const data = snapshot.data();
+                        if (data && Array.isArray(data.rowsData)) {
+                            // Sync state from server across all devices
+                            window.rowsData = data.rowsData;
+                            if (typeof window.renderTable === 'function') {
+                                window.renderTable();
+                            }
+                        }
+                    } else {
+                        // First run initialization with current or sample data
+                        syncToFirestore(window.rowsData || []);
+                    }
+                }, (error) => {
+                    console.error("Error listening to Firestore updates:", error);
+                });
+            });
+        }
+
+        // Save current table state to Firestore
+        async function syncToFirestore(data) {
+            if (!currentUser) return;
+            try {
+                await setDoc(docRef, {
+                    rowsData: data,
+                    updatedAt: new Date().toISOString()
+                }, { merge: true });
+            } catch (error) {
+                console.error("Error syncing to Firestore:", error);
+            }
+        }
+
+        // Export save function to global scope to replace LocalStorage calls
+        window.guardarEnFirestore = function() {
+            syncToFirestore(window.rowsData || []);
+        };
+
+        // Initialize Firebase on start
+        initFirebaseSync();
+    </script>
+
     <script>
         // Get today's date in YYYY-MM-DD
         const todayStr = new Date().toISOString().split('T')[0];
@@ -352,34 +442,22 @@
         let currentCalDate = new Date();
         let selectedDateFilter = todayStr;
 
-        // Data Store
-        let rowsData = [];
+        // Global Data Store (Synchronized with Firestore)
+        window.rowsData = [];
         let rowToDeleteId = null;
 
         let chartInstance = null;
 
-        const STORAGE_KEY = 'MIDAS_TD_DATA_STORE';
-
         function guardarEnLocalStorage() {
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(rowsData));
-            } catch (e) {
-                console.error("Error al guardar en LocalStorage:", e);
+            // Updated to synchronize with Firestore across all devices
+            if (typeof window.guardarEnFirestore === 'function') {
+                window.guardarEnFirestore();
             }
         }
 
         function cargarDeLocalStorage() {
-            try {
-                const dataGuardada = localStorage.getItem(STORAGE_KEY);
-                if (dataGuardada) {
-                    rowsData = JSON.parse(dataGuardada);
-                } else {
-                    rowsData = [];
-                }
-            } catch (e) {
-                console.error("Error al cargar de LocalStorage:", e);
-                rowsData = [];
-            }
+            // Initial placeholder data while Firestore loads
+            window.rowsData = window.rowsData || [];
         }
 
         // Initialize App on Load
@@ -426,6 +504,7 @@
 
         function renderTable() {
             const tbody = document.getElementById('cuerpoTabla');
+            if (!tbody) return;
             tbody.innerHTML = '';
 
             const activeRows = getFilteredRowsData();
@@ -452,33 +531,33 @@
                 tr.innerHTML = `
                     <td class="p-2 text-center font-bold text-zinc-400 border-r border-zinc-800">${index + 1}</td>
                     <td class="p-2 border-r border-zinc-800 text-center">
-                        <input type="date" value="${row.fecha}" onblur="updateRowData(${row.id}, 'fecha', this.value)" class="bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-xs text-zinc-200 focus:outline-none focus:border-amber-500">
+                        <input type="date" value="${row.fecha || ''}" onchange="updateRowData(${row.id}, 'fecha', this.value)" class="bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-xs text-zinc-200 focus:outline-none focus:border-amber-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800">
-                        <input type="text" value="${row.cliente}" onblur="updateRowData(${row.id}, 'cliente', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-amber-500">
+                        <input type="text" value="${row.cliente || ''}" onblur="updateRowData(${row.id}, 'cliente', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-amber-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-confirm">
-                        <input type="time" value="${row.confirmacion}" onblur="updateRowData(${row.id}, 'confirmacion', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-lime-500">
+                        <input type="time" value="${row.confirmacion || ''}" onchange="updateRowData(${row.id}, 'confirmacion', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-lime-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-guia">
-                        <input type="time" value="${row.guiaEnviada}" onblur="updateRowData(${row.id}, 'guiaEnviada', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-yellow-500">
+                        <input type="time" value="${row.guiaEnviada || ''}" onchange="updateRowData(${row.id}, 'guiaEnviada', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-yellow-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-calc text-center">${tdOficina}</td>
                     <td class="p-2 border-r border-zinc-800 col-sucursal">
-                        <input type="time" value="${row.salidaSucursal}" onblur="updateRowData(${row.id}, 'salidaSucursal', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-zinc-500">
+                        <input type="time" value="${row.salidaSucursal || ''}" onchange="updateRowData(${row.id}, 'salidaSucursal', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-zinc-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-calc text-center">${tdCampo}</td>
                     <td class="p-2 border-r border-zinc-800 col-despacho">
-                        <input type="time" value="${row.fotoDespacho}" onblur="updateRowData(${row.id}, 'fotoDespacho', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-red-500">
+                        <input type="time" value="${row.fotoDespacho || ''}" onchange="updateRowData(${row.id}, 'fotoDespacho', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-red-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-calc text-center">${tdIda}</td>
                     <td class="p-2 border-r border-zinc-800 col-sucursal">
-                        <input type="time" value="${row.regreso}" onblur="updateRowData(${row.id}, 'regreso', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-zinc-500">
+                        <input type="time" value="${row.regreso || ''}" onchange="updateRowData(${row.id}, 'regreso', this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-zinc-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 col-calc text-center">${tdRetorno}</td>
                     <td class="p-2 border-r border-zinc-800 col-calc text-center ${tdTotalColorClass} font-extrabold">${tdTotal}</td>
                     <td class="p-2 border-r border-zinc-800 col-despacho">
-                        <input type="text" value="${row.auxiliar}" onblur="updateRowData(${row.id}, 'auxiliar', this.value)" placeholder="Auxiliar..." class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-red-500">
+                        <input type="text" value="${row.auxiliar || ''}" onblur="updateRowData(${row.id}, 'auxiliar', this.value)" placeholder="Auxiliar..." class="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-red-500">
                     </td>
                     <td class="p-2 border-r border-zinc-800 text-center relative group" 
                         tabindex="0"
@@ -520,8 +599,8 @@
         }
 
         function getFilteredRowsData() {
-            if (!selectedDateFilter) return rowsData;
-            return rowsData.filter(r => r.fecha === selectedDateFilter);
+            if (!selectedDateFilter) return window.rowsData;
+            return window.rowsData.filter(r => r.fecha === selectedDateFilter);
         }
 
         /* --- VISUAL CALENDAR FUNCTIONS --- */
@@ -635,9 +714,9 @@
 
         // Row Manipulation
         function agregarFila() {
-            const newId = rowsData.length ? Math.max(...rowsData.map(r => r.id)) + 1 : 1;
+            const newId = window.rowsData.length ? Math.max(...window.rowsData.map(r => r.id)) + 1 : 1;
             const filterDate = selectedDateFilter || todayStr;
-            rowsData.push({
+            window.rowsData.push({
                 id: newId,
                 fecha: filterDate,
                 cliente: "",
@@ -665,7 +744,7 @@
 
         function confirmarEliminarFila() {
             if (rowToDeleteId !== null) {
-                rowsData = rowsData.filter(r => r.id !== rowToDeleteId);
+                window.rowsData = window.rowsData.filter(r => r.id !== rowToDeleteId);
                 rowToDeleteId = null;
                 guardarEnLocalStorage();
                 renderTable();
@@ -674,11 +753,13 @@
         }
 
         function updateRowData(id, field, value) {
-            const row = rowsData.find(r => r.id === id);
+            const row = window.rowsData.find(r => r.id === id);
             if (row) {
-                row[field] = value;
-                guardarEnLocalStorage();
-                renderTable();
+                if (row[field] !== value) {
+                    row[field] = value;
+                    guardarEnLocalStorage();
+                    renderTable();
+                }
             }
         }
 
@@ -832,7 +913,7 @@
             const rows = document.querySelectorAll('#cuerpoTabla tr');
             rows.forEach(row => {
                 const rowId = parseInt(row.getAttribute('data-row-id'));
-                const rData = rowsData.find(r => r.id === rowId);
+                const rData = window.rowsData.find(r => r.id === rowId);
 
                 let matchesText = true;
                 let matchesDate = true;
@@ -887,7 +968,7 @@
                 return;
             }
 
-            const row = rowsData.find(r => r.id === rowId);
+            const row = window.rowsData.find(r => r.id === rowId);
             if (row) {
                 // Time extractor regex (HH:MM)
                 const timeMatch = msg.match(/\b([01]?[0-9]|2[0-3]):[0-5][0-9]\b/);
@@ -906,6 +987,7 @@
                     row.regreso = timeFound;
                 }
 
+                guardarEnLocalStorage();
                 renderTable();
                 toggleAIModal();
                 document.getElementById('aiMessageInput').value = '';
